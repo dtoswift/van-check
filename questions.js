@@ -41,8 +41,8 @@ window.VAN_CHECK_TEMPLATE = {
   // The drop-down also has "My van isn't on the list" for hire or new vans.
   // If this list is empty, both fields are plain typing boxes instead.
   vehicles: [
-    { reg: 'EXAMPLE 1', make: 'Replace with make/type' },
-    { reg: 'EXAMPLE 2', make: 'Replace with make/type' },
+    { reg: 'DS24 EFN', make: 'Hyundai Kona' },
+    { reg: 'AX24 EXA', make: 'BMW ix2' },
   ],
 
   // Header lines of the paper form, in order. Driver and Date are the fixed
