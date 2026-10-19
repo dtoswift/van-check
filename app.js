@@ -25,6 +25,7 @@
   const CFG = {
     draftKey: 'vancheck:draft:v1',
     managerKey: 'vancheck:manager-email',
+    sessionKey: 'vancheck:session', // marks this browser tab's visit
     draftMaxAgeMs: 72 * 60 * 60 * 1000, // unfinished checks are discarded after 3 days
     maxPhotos: T.maxPhotos ?? 12,
     minPhotos: T.minPhotos ?? 1,
@@ -32,7 +33,9 @@
     imgQuality: 0.72, // JPEG quality
   };
 
-  const LABELS = Object.assign({ driver: 'Driver', employeeId: 'Employee ID', date: 'Date' }, T.labels);
+  const LABELS = Object.assign({ driver: 'Driver', date: 'Date' }, T.labels);
+  const VEHICLES = Array.isArray(T.vehicles) ? T.vehicles.filter((v) => v && v.reg) : [];
+  const OTHER = '__other';
   const HEADER_FIELDS = T.headerFields || [];
   const QUESTIONS = [];
   T.sections.forEach((s) => s.questions.forEach((q) => QUESTIONS.push(q)));
@@ -170,11 +173,73 @@
     HEADER_FIELDS.forEach((q) => {
       const inputId = 'in-' + q.id;
       const errId = 'err-' + q.id;
+
+      // Registration as a drop-down of the fleet, when a vehicle list is set.
+      if (q.type === 'vehicle' && VEHICLES.length) {
+        const select = el('select', { id: 'in-vehicle-choice', 'aria-describedby': errId },
+          el('option', { value: '', text: 'Choose your van' }),
+          ...VEHICLES.map((v) => el('option', { value: v.reg, text: v.make ? `${v.reg} – ${v.make}` : v.reg })),
+          el('option', { value: OTHER, text: 'My van isn’t on the list' }));
+        select.addEventListener('change', () => applyVehicleChoice(true));
+        const other = el('div', { class: 'followup', id: 'veh-other', hidden: true },
+          el('label', { for: inputId, text: 'Type the registration' }),
+          textInputFor(Object.assign({}, q, { upper: true }), inputId, errId));
+        box.append(el('div', { class: 'field', id: 'q-' + q.id },
+          el('label', { for: 'in-vehicle-choice', text: q.text }),
+          select, other,
+          el('p', { class: 'err', id: errId })));
+        return;
+      }
+
+      const fieldQ = q.type === 'vehicle' ? Object.assign({}, q, { type: 'text', upper: true }) : q;
       box.append(el('div', { class: 'field', id: 'q-' + q.id },
         el('label', { for: inputId, text: q.text }),
-        textInputFor(q, inputId, errId),
+        textInputFor(fieldQ, inputId, errId),
+        q.id === 'make-type' && VEHICLES.length ? el('p', { class: 'hint', id: 'make-hint', text: 'Filled in from the van you choose.' }) : null,
         el('p', { class: 'err', id: errId })));
     });
+  }
+
+  // Keeps the registration and make/type in step with the drop-down.
+  // userChange = true when the operative picked a van (not when restoring).
+  function applyVehicleChoice(userChange) {
+    const select = byId('in-vehicle-choice');
+    if (!select) return;
+    const choice = select.value;
+    const other = choice === OTHER;
+    const v = VEHICLES.find((x) => x.reg === choice);
+    const regInput = byId('in-vehicle-reg');
+    const makeInput = byId('in-make-type');
+    const makeHint = byId('make-hint');
+
+    byId('veh-other').hidden = !other;
+    state.answers['vehicle-choice'] = choice;
+
+    if (v) {
+      state.answers['vehicle-reg'] = v.reg;
+      regInput.value = '';
+      if (makeInput) {
+        makeInput.value = v.make || '';
+        makeInput.readOnly = !!v.make;
+        state.answers['make-type'] = v.make || state.answers['make-type'] || '';
+        if (!v.make) makeInput.value = state.answers['make-type'];
+      }
+      if (makeHint) makeHint.hidden = !v.make;
+    } else {
+      if (userChange) {
+        state.answers['vehicle-reg'] = '';
+        if (makeInput && makeInput.readOnly) { makeInput.value = ''; state.answers['make-type'] = ''; }
+      }
+      if (makeInput) makeInput.readOnly = false;
+      if (makeHint) makeHint.hidden = true;
+      if (other && userChange) regInput.focus();
+    }
+    if (userChange) {
+      clearError('vehicle-reg');
+      if (v && v.make) clearError('make-type');
+      updateProgress();
+      scheduleSave();
+    }
   }
 
   function renderQuestion(q, num) {
@@ -260,7 +325,6 @@
   function detailValues() {
     return {
       name: byId('opName').value.trim(),
-      employeeId: byId('opId').value.trim().toUpperCase(),
       date: byId('checkDate').value,
     };
   }
@@ -291,7 +355,7 @@
     const items = [];
     const d = detailValues();
     HEADER_FIELDS.forEach((q) => { if (q.required) items.push(!isBlank(state.answers[q.id])); });
-    items.push(!!d.name, !!d.employeeId, !!d.date);
+    items.push(!!d.name, !!d.date);
     QUESTIONS.forEach((q) => { if (q.required) items.push(!isBlank(state.answers[q.id])); });
     if (CFG.minPhotos > 0) items.push(state.photos.filter((p) => !p.broken).length >= CFG.minPhotos);
     if (SIG && SIG.required) items.push(!!state.signature);
@@ -337,7 +401,6 @@
 
     HEADER_FIELDS.forEach((q) => validateQuestion(q, problems));
     if (!d.name) problems.push(['opName', 'Enter your full name.']);
-    if (!d.employeeId) problems.push(['opId', 'Enter your employee ID.']);
     if (!d.date) problems.push(['checkDate', 'Enter the date of the check.']);
     else if (d.date > todayISO()) problems.push(['checkDate', 'The date can’t be in the future.']);
 
@@ -362,6 +425,10 @@
 
   function validateQuestion(q, problems) {
     const v = state.answers[q.id];
+    if (q.type === 'vehicle' && isBlank(v) && VEHICLES.length) {
+      problems.push([q.id, state.answers['vehicle-choice'] === OTHER ? 'Type the registration.' : 'Choose your van from the list.']);
+      return;
+    }
     if (isBlank(v)) {
       if (q.required) problems.push([q.id, optionsFor(q) ? 'Choose an answer.' : 'Enter an answer.']);
       return;
@@ -589,6 +656,19 @@
   // Restore an unfinished check
   // -------------------------------------------------------------------------
   async function restoreDraft() {
+    // A new visit (new tab, or the page opened again from a link or bookmark)
+    // always starts with a blank form. Within the same visit, a refresh or the
+    // phone reloading the page in the background brings the answers back.
+    let newVisit = true;
+    try {
+      newVisit = !sessionStorage.getItem(CFG.sessionKey);
+      sessionStorage.setItem(CFG.sessionKey, '1');
+    } catch (e) { newVisit = true; }
+    if (newVisit) {
+      await clearDraft();
+      return;
+    }
+
     let d = null;
     try { d = JSON.parse(localStorage.getItem(CFG.draftKey) || 'null'); } catch (e) { d = null; }
     if (d && Date.now() - d.savedAt > CFG.draftMaxAgeMs) {
@@ -604,7 +684,6 @@
       state.signature = d.signature || null;
       const det = d.details || {};
       byId('opName').value = det.name || '';
-      byId('opId').value = det.employeeId || '';
       if (det.date) byId('checkDate').value = det.date;
 
       for (const [id, v] of Object.entries(state.answers)) {
@@ -615,6 +694,7 @@
         if (id.endsWith('__comments') && !isBlank(v)) openComments(id.replace(/__comments$/, ''), false);
       }
       QUESTIONS.forEach((q) => { if (q.comments && isFlagged(q)) openComments(q.id, false); });
+      applyVehicleChoice(false);
     }
 
     state.photos = photos.sort((a, b) => a.added - b.added);
@@ -622,7 +702,7 @@
 
     const when = d ? new Date(d.savedAt) : null;
     byId('restoreText').textContent = when
-      ? `Your unfinished check from ${when.toLocaleDateString('en-GB', { weekday: 'long' })} at ${pad(when.getHours())}:${pad(when.getMinutes())} has been restored.`
+      ? `Your answers from ${pad(when.getHours())}:${pad(when.getMinutes())} have been brought back after the page reloaded.`
       : 'Your unfinished check has been restored.';
     byId('restoreBanner').hidden = false;
   }
@@ -716,7 +796,6 @@
     const detailRows = [
       ...HEADER_FIELDS.map((q) => [q.text, formatAnswer(q) || '-']),
       [LABELS.driver, d.name],
-      [LABELS.employeeId, d.employeeId],
       [LABELS.date, prettyDate(d.date)],
     ];
     const half = (CW - 8) / 2;
@@ -931,7 +1010,7 @@
       doc.setDrawColor(...C.line); doc.setLineWidth(0.2);
       doc.line(M, PH - M - 4, PW - M, PH - M - 4);
       font(8, 'normal', C.muted);
-      doc.text(pdfSafe(`${T.title}${reg} - ${d.name} (${d.employeeId}) - ${prettyDate(d.date)}`).slice(0, 110), M, PH - M);
+      doc.text(pdfSafe(`${T.title}${reg} - ${d.name} - ${prettyDate(d.date)}`).slice(0, 110), M, PH - M);
       doc.text(`Page ${i} of ${pages}`, PW - M, PH - M, { align: 'right' });
     }
 
@@ -942,11 +1021,11 @@
       creator: 'Van check page',
     });
 
-    const safeId = d.employeeId.replace(/[^A-Za-z0-9_-]/g, '') || 'operative';
+    const safeName = d.name.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'driver';
     const safeReg = String(state.answers['vehicle-reg'] || '').replace(/[^A-Za-z0-9]/g, '');
     return {
       blob: doc.output('blob'),
-      name: `vehicle-check_${safeId}${safeReg ? '_' + safeReg : ''}_${d.date}.pdf`,
+      name: `vehicle-check${safeReg ? '_' + safeReg : ''}_${safeName}_${d.date}.pdf`,
       pages,
       warnings,
     };
@@ -973,7 +1052,7 @@
     byId('resultScreen').hidden = false;
 
     byId('resultSummary').textContent =
-      `${d.name} (${d.employeeId}), ${prettyDate(d.date)}. ` +
+      `${d.name}${state.answers['vehicle-reg'] ? ', ' + state.answers['vehicle-reg'] : ''}, ${prettyDate(d.date)}. ` +
       `${state.photos.length} photo${state.photos.length === 1 ? '' : 's'}, ${state.pdf.pages} pages, ${kb(state.pdf.blob.size)}. ` +
       (flaggedCount ? `${flaggedCount} item${flaggedCount === 1 ? '' : 's'} marked as needing attention.` : 'No defects reported.');
 
@@ -1061,8 +1140,8 @@
     const d = detailValues();
     const reg = state.answers['vehicle-reg'] ? ` (${state.answers['vehicle-reg']})` : '';
     return {
-      subject: `Monthly vehicle check: ${d.name} (${d.employeeId}), ${prettyDate(d.date)}`,
-      body: `Please find attached my monthly vehicle check${reg} for ${prettyDate(d.date)}.\n\n${d.name}\nEmployee ID ${d.employeeId}`,
+      subject: `Monthly vehicle check: ${d.name}${reg}, ${prettyDate(d.date)}`,
+      body: `Please find attached my monthly vehicle check${reg} for ${prettyDate(d.date)}.\n\n${d.name}`,
     };
   }
 
@@ -1184,7 +1263,6 @@
   async function init() {
     document.title = 'Monthly vehicle checklist';
     byId('lbl-opName').textContent = LABELS.driver;
-    byId('lbl-opId').textContent = LABELS.employeeId;
     byId('lbl-checkDate').textContent = LABELS.date;
     byId('photoHint').textContent = T.photoHint || '';
     if (!SIG) byId('field-signature').hidden = true;
@@ -1198,7 +1276,7 @@
     renderQuestions();
     renderPhotos();
 
-    ['opName', 'opId', 'checkDate'].forEach((id) => {
+    ['opName', 'checkDate'].forEach((id) => {
       byId(id).addEventListener('input', () => { clearError(id); updateProgress(); scheduleSave(); });
     });
     byId('camInput').addEventListener('change', (e) => addFiles(e.target));

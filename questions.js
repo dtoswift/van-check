@@ -10,6 +10,7 @@
  *   type       'satisfactory'  √ satisfactory / X defective
  *              'yesnona'       Yes / No / N/A
  *              'yesno'         Yes / No
+ *              'vehicle'       drop-down of the vans in `vehicles` (registration)
  *              'text'          single line of text
  *              'textarea'      several lines of text
  *              'number'        a number (optional `unit`)
@@ -34,16 +35,25 @@ window.VAN_CHECK_TEMPLATE = {
   managerEmailDomains: [],
   photoHint: 'Add clear photos of the outside of the van from each side, plus anything that’s damaged or defective.',
 
+  // The fleet, shown as a drop-down for "Vehicle Registration no". Choosing a
+  // van fills in "Vehicle make/type" automatically. One line per van:
+  //   { reg: 'AB12 CDE', make: 'Ford Transit Custom' },
+  // The drop-down also has "My van isn't on the list" for hire or new vans.
+  // If this list is empty, both fields are plain typing boxes instead.
+  vehicles: [
+    { reg: 'EXAMPLE 1', make: 'Replace with make/type' },
+    { reg: 'EXAMPLE 2', make: 'Replace with make/type' },
+  ],
+
   // Header lines of the paper form, in order. Driver and Date are the fixed
   // identity fields and are labelled by `labels` below.
   headerFields: [
-    { id: 'vehicle-reg', text: 'Vehicle Registration no', type: 'text', required: true, upper: true },
+    { id: 'vehicle-reg', text: 'Vehicle Registration no', type: 'vehicle', required: true },
     { id: 'mileage', text: 'Mileage reading', type: 'number', required: true },
     { id: 'make-type', text: 'Vehicle make/type', type: 'text', required: true },
   ],
   labels: {
     driver: 'Driver',
-    employeeId: 'Employee ID',
     date: 'Date',
   },
 

@@ -19,7 +19,7 @@
   <!-- ===================== FORM ===================== -->
   <main id="formScreen" class="screen">
     <div id="restoreBanner" class="banner" hidden>
-      <p id="restoreText">Your unfinished check has been restored.</p>
+      <p id="restoreText">Your answers have been brought back after the page reloaded.</p>
       <button type="button" id="discardDraftBtn" class="btn btn-quiet">Start again with a blank check</button>
     </div>
 
@@ -35,12 +35,6 @@
         <p class="hint">Your full name</p>
         <input id="opName" name="opName" type="text" autocomplete="name" autocapitalize="words" maxlength="100" aria-describedby="err-opName">
         <p class="err" id="err-opName"></p>
-      </div>
-
-      <div class="field" id="field-opId">
-        <label for="opId" id="lbl-opId">Employee ID</label>
-        <input id="opId" name="opId" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="40" aria-describedby="err-opId">
-        <p class="err" id="err-opId"></p>
       </div>
 
       <div class="field" id="field-checkDate">
