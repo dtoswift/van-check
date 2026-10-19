@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1F2A33">
+  <meta name="robots" content="noindex">
+  <title>Monthly vehicle checklist</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <img src="logo.jpg" alt="Gaia" class="logo" width="96" height="45">
+    <h1 id="checkTitle">Monthly vehicle checklist</h1>
+  </header>
+
+  <!-- ===================== FORM ===================== -->
+  <main id="formScreen" class="screen">
+    <div id="restoreBanner" class="banner" hidden>
+      <p id="restoreText">Your unfinished check has been restored.</p>
+      <button type="button" id="discardDraftBtn" class="btn btn-quiet">Start again with a blank check</button>
+    </div>
+
+    <noscript><div class="banner banner-warn">This page needs JavaScript switched on.</div></noscript>
+
+    <section class="block" aria-labelledby="h-details">
+      <h2 id="h-details">Vehicle and driver</h2>
+
+      <div id="headerFields"></div>
+
+      <div class="field" id="field-opName">
+        <label for="opName" id="lbl-opName">Driver</label>
+        <p class="hint">Your full name</p>
+        <input id="opName" name="opName" type="text" autocomplete="name" autocapitalize="words" maxlength="100" aria-describedby="err-opName">
+        <p class="err" id="err-opName"></p>
+      </div>
+
+      <div class="field" id="field-opId">
+        <label for="opId" id="lbl-opId">Employee ID</label>
+        <input id="opId" name="opId" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="40" aria-describedby="err-opId">
+        <p class="err" id="err-opId"></p>
+      </div>
+
+      <div class="field" id="field-checkDate">
+        <label for="checkDate" id="lbl-checkDate">Date</label>
+        <input id="checkDate" name="checkDate" type="date" aria-describedby="err-checkDate">
+        <p class="err" id="err-checkDate"></p>
+      </div>
+    </section>
+
+    <div id="questions"></div>
+
+    <section class="block" id="field-photos" aria-labelledby="h-photos">
+      <div class="block-head">
+        <h2 id="h-photos">Van photos</h2>
+        <span id="photoCount" class="count"></span>
+      </div>
+      <p class="hint" id="photoHint"></p>
+
+      <div class="photo-actions">
+        <label class="btn btn-secondary file-btn">
+          <input type="file" id="camInput" accept="image/*" capture="environment" class="visually-hidden">
+          Take a photo
+        </label>
+        <label class="btn btn-secondary file-btn">
+          <input type="file" id="libInput" accept="image/*" multiple class="visually-hidden">
+          Choose from your photos
+        </label>
+      </div>
+
+      <p id="photoStatus" class="status" role="status" aria-live="polite"></p>
+      <ul id="photoList" class="photo-grid"></ul>
+      <p class="err" id="err-photos"></p>
+    </section>
+
+    <section class="block" id="field-signature" aria-labelledby="h-signature">
+      <h2 id="h-signature">Driver’s signature</h2>
+      <p class="hint">Sign in the box with your finger.</p>
+      <canvas id="sigPad" class="sig-pad" aria-label="Signature box. Draw your signature with your finger." role="img"></canvas>
+      <button type="button" id="sigClearBtn" class="btn btn-quiet">Clear signature</button>
+      <p class="err" id="err-signature"></p>
+    </section>
+  </main>
+
+  <div class="actionbar" id="formBar">
+    <p class="progress" id="progressText" aria-live="polite"></p>
+    <button type="button" id="createBtn" class="btn btn-bar">Create PDF</button>
+  </div>
+
+  <!-- ===================== RESULTS ===================== -->
+  <main id="resultScreen" class="screen" hidden>
+    <section class="block" aria-labelledby="h-ready">
+      <h2 id="h-ready" tabindex="-1">Your PDF is ready</h2>
+      <p id="resultSummary"></p>
+      <div id="pdfWarnings" class="banner banner-warn" hidden></div>
+      <div class="stack top-gap">
+        <button type="button" id="downloadBtn" class="btn btn-primary">Download PDF</button>
+        <button type="button" id="shareBtn" class="btn btn-secondary" hidden>Share PDF</button>
+      </div>
+    </section>
+
+    <section class="block" aria-labelledby="h-email">
+      <h2 id="h-email">Email it to your manager</h2>
+
+      <div id="emailEntry">
+        <div class="field" id="field-mgrEmail">
+          <label for="mgrEmail">Manager’s email address</label>
+          <input id="mgrEmail" type="email" inputmode="email" autocomplete="email" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="254" aria-describedby="err-mgrEmail">
+          <p class="err" id="err-mgrEmail"></p>
+        </div>
+        <button type="button" id="reviewSendBtn" class="btn btn-primary">Send to manager</button>
+      </div>
+
+      <div id="emailConfirm" hidden>
+        <p>Send the PDF to this address?</p>
+        <p class="confirm-addr" id="confirmAddr"></p>
+        <div class="stack">
+          <button type="button" id="confirmSendBtn" class="btn btn-primary">Yes, send it</button>
+          <button type="button" id="changeAddrBtn" class="btn btn-secondary">Change the address</button>
+        </div>
+      </div>
+
+      <div id="sendStatus" class="status" role="status" aria-live="polite"></div>
+      <button type="button" id="retrySendBtn" class="btn btn-primary" hidden>Try sending again</button>
+    </section>
+
+    <section class="block">
+      <div class="stack">
+        <button type="button" id="editBtn" class="btn btn-secondary">Change my answers</button>
+        <button type="button" id="finishBtn" class="btn btn-quiet">Finish and clear this check from my phone</button>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="alert" hidden></div>
+
+  <script src="/vendor/jspdf/jspdf.umd.min.js"></script>
+  <script src="questions.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
