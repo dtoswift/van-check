@@ -5,7 +5,7 @@
  * Bump VERSION if you ever need to force every phone to drop its saved copy.
  */
 const VERSION = 'van-check-v1';
-const FILES = ['./', 'index.html', 'styles.css', 'app.js', 'questions.js', 'logo.jpg', 'vendor/jspdf.umd.min.js'];
+const FILES = ['./', 'index.html', 'styles.css', 'app.js', 'questions.js', 'logo.jpg', 'jspdf.umd.min.js'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(VERSION).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
