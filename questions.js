@@ -97,7 +97,7 @@ window.VAN_CHECK_TEMPLATE = {
       questions: [
         { id: 'fl-engine-oil', text: 'Engine oil level', type: 'satisfactory', required: true, comments: true, flagIf: 'Defective', naFor: ['Electric'] },
         { id: 'fl-washer', text: 'Windscreen wash level', type: 'satisfactory', required: true, comments: true, flagIf: 'Defective' },
-        { id: 'fl-leaks', text: 'Oil or waste leaks', type: 'satisfactory', required: true, comments: true, flagIf: 'Defective' },
+        { id: 'fl-leaks', text: 'Oil or waste leaks', type: 'satisfactory', required: true, comments: true, flagIf: 'Defective', naFor: ['Electric'] },
       ],
     },
     {
