@@ -89,36 +89,12 @@
       <h2 id="h-ready" tabindex="-1">Your PDF is ready</h2>
       <p id="resultSummary"></p>
       <div id="pdfWarnings" class="banner banner-warn" hidden></div>
-      <div class="stack top-gap">
-        <button type="button" id="downloadBtn" class="btn btn-primary">Download PDF</button>
+      <p class="hint top-gap">Tap Share PDF and choose how to send it to your manager, for example Outlook, Mail, WhatsApp or Teams.</p>
+      <div class="stack">
+        <button type="button" id="shareBtn" class="btn btn-primary">Share PDF</button>
+        <button type="button" id="downloadBtn" class="btn btn-secondary">Download PDF</button>
       </div>
-    </section>
-
-    <section class="block" aria-labelledby="h-email">
-      <h2 id="h-email">Email it to your manager</h2>
-      <p class="hint" id="emailHow"></p>
-
-      <div id="emailEntry">
-        <div class="field" id="field-mgrEmail">
-          <label for="mgrEmail">Manager’s email address</label>
-          <input id="mgrEmail" type="email" inputmode="email" autocomplete="email" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="254" aria-describedby="err-mgrEmail">
-          <p class="err" id="err-mgrEmail"></p>
-        </div>
-        <button type="button" id="reviewSendBtn" class="btn btn-primary">Email to manager</button>
-      </div>
-
-      <div id="emailConfirm" hidden>
-        <p>Send the PDF to this address?</p>
-        <p class="confirm-addr" id="confirmAddr"></p>
-        <p class="hint" id="copyNote"></p>
-        <div class="stack">
-          <button type="button" id="confirmSendBtn" class="btn btn-primary">Yes, open my email app</button>
-          <button type="button" id="changeAddrBtn" class="btn btn-secondary">Change the address</button>
-        </div>
-      </div>
-
       <div id="sendStatus" class="status" role="status" aria-live="polite"></div>
-      <button type="button" id="fallbackBtn" class="btn btn-secondary top-gap" hidden>Download and email it instead</button>
     </section>
 
     <section class="block">

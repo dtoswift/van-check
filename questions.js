@@ -33,9 +33,6 @@ window.VAN_CHECK_TEMPLATE = {
   logo: 'logo.jpg', // printed at the top of the PDF; remove to omit
   minPhotos: 1,
   maxPhotos: 12,
-  // Restrict the manager's email to these domains, e.g. ['yourcompany.co.uk'].
-  // Leave empty to allow any address.
-  managerEmailDomains: [],
   photoHint: 'Add clear photos of the outside of the van from each side, plus anything that’s damaged or defective.',
 
   // The company vehicles, shown as a drop-down for "Vehicle Registration no".

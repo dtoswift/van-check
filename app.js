@@ -5,7 +5,7 @@
  * be hosted on GitHub Pages. Answers and photos are kept on the device
  * (autosaved so a reload or dropped signal loses nothing), photos are
  * compressed with <canvas>, the PDF is built with jsPDF, and the operative
- * emails it from their own email app. Nothing is sent anywhere else.
+ * shares it from the phone's share menu (email, WhatsApp, Teams and so on). Nothing is sent anywhere else.
  */
 (function () {
   'use strict';
@@ -24,7 +24,6 @@
   // -------------------------------------------------------------------------
   const CFG = {
     draftKey: 'vancheck:draft:v1',
-    managerKey: 'vancheck:manager-email',
     sessionKey: 'vancheck:session', // marks this browser tab's visit
     draftMaxAgeMs: 72 * 60 * 60 * 1000, // unfinished checks are discarded after 3 days
     maxPhotos: T.maxPhotos ?? 12,
@@ -1201,12 +1200,8 @@
 
     state.pdfFile = new File([state.pdf.blob], state.pdf.name, { type: 'application/pdf' });
 
-    try {
-      const saved = localStorage.getItem(CFG.managerKey);
-      if (saved && !byId('mgrEmail').value) byId('mgrEmail').value = saved;
-    } catch (e) { /* ignore */ }
 
-    resetSendUi();
+    setSendStatus('');
     window.scrollTo(0, 0);
     byId('h-ready').focus({ preventScroll: true });
   }
@@ -1262,25 +1257,18 @@
   }
 
   // -------------------------------------------------------------------------
-  // Email to manager, from the operative's own email app
-  //
-  // Phones can't attach a file to a mailto: link, so the page uses the share
-  // sheet (navigator.share), which hands the PDF to Mail, Outlook or Gmail as
-  // an attachment. The share sheet can't fill in the To box, so the manager's
-  // address is copied to the clipboard first. Phones that can't share files
-  // get the fallback: download the PDF, then open a mailto: with the address,
-  // subject and body filled in, for the operative to attach the PDF to.
+  // Share: opens the phone's (or computer's) share menu with the PDF attached,
+  // so the operative chooses how to send it: Outlook, Mail, Gmail, WhatsApp,
+  // Teams and so on. Where a browser can't share files, the PDF downloads.
   // -------------------------------------------------------------------------
-  const EMAIL_RE = /^[^\s@<>()[\]\\,;:"]+@[^\s@<>()[\]\\,;:"]+\.[^\s@<>()[\]\\,;:"]{2,}$/;
-
   const canShareFile = () => !!(state.pdfFile && navigator.canShare && navigator.canShare({ files: [state.pdfFile] }));
 
-  function emailText() {
+  function shareText() {
     const d = detailValues();
     const reg = state.answers['vehicle-reg'] ? ` (${state.answers['vehicle-reg']})` : '';
     return {
-      subject: `Monthly vehicle check: ${d.name}${reg}, ${prettyDate(d.date)}`,
-      body: `Please find attached my monthly vehicle check${reg} for ${prettyDate(d.date)}.\n\n${d.name}`,
+      title: `Monthly vehicle check: ${d.name}${reg}, ${prettyDate(d.date)}`,
+      text: `Please find attached my monthly vehicle check${reg} for ${prettyDate(d.date)}.\n\n${d.name}`,
     };
   }
 
@@ -1290,100 +1278,35 @@
     s.className = 'status' + (kind === 'error' ? ' is-error' : kind === 'ok' ? ' is-ok' : '');
   }
 
-  function resetSendUi() {
-    byId('emailEntry').hidden = false;
-    byId('emailConfirm').hidden = true;
-    byId('fallbackBtn').hidden = true;
-    setSendStatus('');
-    clearError('mgrEmail');
-    byId('emailHow').textContent = canShareFile()
-      ? 'Your email app will open with the PDF attached, and you send it from your own email.'
-      : 'The PDF will download, then your email app will open with the address filled in. Attach the PDF and send it.';
-  }
-
-  function copyText(text) {
-    if (!navigator.clipboard || !window.isSecureContext) return Promise.resolve(false);
-    return navigator.clipboard.writeText(text).then(() => true, () => false);
-  }
-
-  async function onReviewSend() {
-    const addr = byId('mgrEmail').value.trim().toLowerCase();
-    clearError('mgrEmail');
-    if (!EMAIL_RE.test(addr)) {
-      setError('mgrEmail', 'Enter a full email address, for example name@company.co.uk.');
-      byId('mgrEmail').focus();
-      return;
-    }
-    const allowed = (T.managerEmailDomains || []).map((x) => x.toLowerCase());
-    if (allowed.length && !allowed.includes(addr.split('@')[1])) {
-      setError('mgrEmail', `Use your manager’s work address ending ${allowed.map((x) => '@' + x).join(' or ')}.`);
-      byId('mgrEmail').focus();
-      return;
-    }
-    try { localStorage.setItem(CFG.managerKey, addr); } catch (e) { /* ignore */ }
-
-    // Copy now, on this tap, so the next tap can open the share sheet straight away.
-    const share = canShareFile();
-    const copied = share ? await copyText(addr) : false;
-
-    byId('confirmAddr').textContent = addr;
-    byId('copyNote').textContent = share
-      ? (copied
-        ? 'This address has been copied. When your email app opens, tap the To box and paste it in.'
-        : 'When your email app opens, type this address into the To box.')
-      : 'Your email app will open with this address filled in.';
-    byId('confirmSendBtn').textContent = share ? 'Yes, open my email app' : 'Yes, download and open my email app';
-    byId('emailEntry').hidden = true;
-    byId('emailConfirm').hidden = false;
-    byId('fallbackBtn').hidden = true;
-    setSendStatus('');
-    byId('confirmSendBtn').focus();
-  }
-
-  function onConfirmSend() {
+  // Runs straight from the tap with nothing awaited first: phones only allow
+  // the share menu to open as the immediate result of a tap.
+  function onShare() {
     if (!state.pdf) return;
-    if (canShareFile()) shareByEmail();
-    else downloadAndMail();
-  }
-
-  // Called directly from the tap with nothing awaited first: iOS only allows
-  // the share sheet to open as the immediate result of a tap.
-  function shareByEmail() {
-    const { subject, body } = emailText();
-    navigator.share({ files: [state.pdfFile], title: subject, text: body })
+    if (!canShareFile()) {
+      downloadPdf();
+      setSendStatus('This browser can’t open a share menu, so the PDF has been downloaded instead. Send it from your Downloads or Files.', 'error');
+      return;
+    }
+    const { title, text } = shareText();
+    navigator.share({ files: [state.pdfFile], title, text })
       .then(() => {
-        setSendStatus(
-          'Your email app has the PDF. Check the manager’s address is in the To box, then send it. ' +
-          'Once it has gone, tap “Finish and clear this check from my phone”.', 'ok');
+        setSendStatus('Shared. Make sure it has actually been sent, then tap “Finish and clear this check from my phone”.', 'ok');
       })
       .catch((e) => {
         if (e && e.name === 'AbortError') {
-          setSendStatus('The email wasn’t sent. Your answers and PDF are still here. Tap “Yes, open my email app” to try again.', 'error');
+          setSendStatus('Nothing was shared. Your answers and PDF are still here. Tap “Share PDF” to try again.', 'error');
         } else {
-          setSendStatus('Your phone couldn’t open the email app with the PDF attached. Tap “Download and email it instead” to send it another way.', 'error');
-          byId('fallbackBtn').hidden = false;
+          downloadPdf();
+          setSendStatus('The share menu didn’t open, so the PDF has been downloaded instead. Send it from your Downloads or Files.', 'error');
         }
       });
-  }
-
-  function downloadAndMail() {
-    const addr = byId('confirmAddr').textContent;
-    const { subject, body } = emailText();
-    downloadPdf();
-    const href = `mailto:${encodeURIComponent(addr).replace('%40', '@')}` +
-      `?subject=${encodeURIComponent(subject)}` +
-      `&body=${encodeURIComponent(body + `\n\n(Attach the downloaded file ${state.pdf.name} before sending.)`)}`;
-    setTimeout(() => { window.location.href = href; }, 600);
-    setSendStatus(
-      `The PDF has downloaded and your email app should now open. Attach the file ${state.pdf.name} ` +
-      '(it’s in your Downloads or Files), then send it. Once it has gone, tap “Finish and clear this check from my phone”.', 'ok');
   }
 
   // -------------------------------------------------------------------------
   // Finish / start again
   // -------------------------------------------------------------------------
   async function onFinish() {
-    const ok = window.confirm('This clears your answers, photos and signature from this phone. Make sure you’ve emailed or downloaded the PDF first.');
+    const ok = window.confirm('This clears your answers, photos and signature from this phone. Make sure you’ve shared or downloaded the PDF first.');
     if (!ok) return;
     await clearDraft();
     location.reload();
@@ -1422,11 +1345,7 @@
     byId('libInput').addEventListener('change', (e) => addFiles(e.target));
     byId('createBtn').addEventListener('click', onCreate);
     byId('downloadBtn').addEventListener('click', onDownload);
-    byId('reviewSendBtn').addEventListener('click', onReviewSend);
-    byId('mgrEmail').addEventListener('keydown', (e) => { if (e.key === 'Enter') onReviewSend(); });
-    byId('confirmSendBtn').addEventListener('click', onConfirmSend);
-    byId('fallbackBtn').addEventListener('click', downloadAndMail);
-    byId('changeAddrBtn').addEventListener('click', () => { resetSendUi(); byId('mgrEmail').focus(); });
+    byId('shareBtn').addEventListener('click', onShare);
     byId('editBtn').addEventListener('click', showForm);
     byId('finishBtn').addEventListener('click', onFinish);
     byId('discardDraftBtn').addEventListener('click', onDiscardDraft);
