@@ -43,6 +43,8 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
+[hidden] { display: none !important; }
+
 html { -webkit-text-size-adjust: 100%; }
 
 body {
@@ -376,3 +378,18 @@ select:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; bor
 .has-error select { border-color: var(--fail); }
 input[readonly] { background: var(--page); color: var(--ink); }
 #veh-other { margin-top: 12px; }
+
+.is-na .choice span { opacity: 0.4; }
+.is-na .choice input { cursor: not-allowed; }
+.na-note {
+  display: inline-block;
+  margin-top: 10px;
+  padding: 6px 12px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  background: var(--page);
+  border-radius: 999px;
+}
+#veh-add { margin-top: 14px; }
+#veh-add .field { margin-bottom: 14px; }
+#removeVehBtn { margin-top: 6px; min-height: 48px; }

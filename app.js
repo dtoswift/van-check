@@ -34,8 +34,11 @@
   };
 
   const LABELS = Object.assign({ driver: 'Driver', date: 'Date' }, T.labels);
-  const VEHICLES = Array.isArray(T.vehicles) ? T.vehicles.filter((v) => v && v.reg) : [];
-  const OTHER = '__other';
+  const FUEL_TYPES = T.fuelTypes || ['Diesel', 'Petrol', 'Electric'];
+  const FLEET = (Array.isArray(T.vehicles) ? T.vehicles : []).filter((v) => v && v.reg)
+    .map((v) => ({ reg: normReg(v.reg), make: String(v.make || '').trim(), fuel: v.fuel || '' }));
+  const ADD = '__add';
+  const MY_VEHICLES_KEY = 'vancheck:my-vehicles';
   const HEADER_FIELDS = T.headerFields || [];
   const QUESTIONS = [];
   T.sections.forEach((s) => s.questions.forEach((q) => QUESTIONS.push(q)));
@@ -84,6 +87,9 @@
     const [y, m, d] = iso.split('-').map(Number);
     return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
   }
+
+  function normReg(r) { return String(r || '').toUpperCase().replace(/\s+/g, ' ').trim(); }
+  const regKey = (r) => normReg(r).replace(/ /g, '');
 
   const isBlank = (v) => v == null || String(v).trim() === '';
   const kb = (bytes) => (bytes > 1024 * 1024 ? (bytes / 1024 / 1024).toFixed(1) + ' MB' : Math.round(bytes / 1024) + ' KB');
@@ -168,78 +174,205 @@
     return input;
   }
 
+  // -------------------------------------------------------------------------
+  // Vehicles: the company list from questions.js, plus any the operative adds
+  // on this phone (kept in localStorage, so they're in the list next time).
+  // -------------------------------------------------------------------------
+  let myVehicles = [];
+  function loadMyVehicles() {
+    try { myVehicles = JSON.parse(localStorage.getItem(MY_VEHICLES_KEY) || '[]').filter((v) => v && v.reg); }
+    catch (e) { myVehicles = []; }
+  }
+  function saveMyVehicles() {
+    try { localStorage.setItem(MY_VEHICLES_KEY, JSON.stringify(myVehicles)); return true; } catch (e) { return false; }
+  }
+  function findVehicle(reg) {
+    if (!reg) return null;
+    const k = regKey(reg);
+    const fleet = FLEET.find((v) => regKey(v.reg) === k);
+    if (fleet) return fleet;
+    const mine = myVehicles.find((v) => regKey(v.reg) === k);
+    return mine ? Object.assign({ local: true }, mine) : null;
+  }
+  const vehicleLabel = (v) => [v.reg, v.make].filter(Boolean).join(' – ') + (v.fuel ? ` (${v.fuel})` : '');
+
+  function populateVehicleSelect(selected) {
+    const select = byId('in-vehicle-choice');
+    const groups = [el('option', { value: '', text: 'Choose your van' })];
+    if (FLEET.length) {
+      groups.push(el('optgroup', { label: 'Company vehicles' },
+        ...FLEET.map((v) => el('option', { value: v.reg, text: vehicleLabel(v) }))));
+    }
+    if (myVehicles.length) {
+      groups.push(el('optgroup', { label: 'Added on this phone' },
+        ...myVehicles.map((v) => el('option', { value: v.reg, text: vehicleLabel(v) }))));
+    }
+    groups.push(el('option', { value: ADD, text: '+ Add a vehicle that isn’t listed' }));
+    select.replaceChildren(...groups);
+    select.value = selected || '';
+  }
+
+  function fuelChoices(name) {
+    return el('div', { class: 'choices' }, ...FUEL_TYPES.map((f) =>
+      el('label', { class: 'choice' }, el('input', { type: 'radio', name, value: f }), el('span', { text: f }))));
+  }
+
   function renderHeaderFields() {
     const box = byId('headerFields');
+    loadMyVehicles();
     HEADER_FIELDS.forEach((q) => {
       const inputId = 'in-' + q.id;
       const errId = 'err-' + q.id;
 
-      // Registration as a drop-down of the fleet, when a vehicle list is set.
-      if (q.type === 'vehicle' && VEHICLES.length) {
-        const select = el('select', { id: 'in-vehicle-choice', 'aria-describedby': errId },
-          el('option', { value: '', text: 'Choose your van' }),
-          ...VEHICLES.map((v) => el('option', { value: v.reg, text: v.make ? `${v.reg} – ${v.make}` : v.reg })),
-          el('option', { value: OTHER, text: 'My van isn’t on the list' }));
+      if (q.type === 'vehicle') {
+        const select = el('select', { id: 'in-vehicle-choice', 'aria-describedby': errId });
         select.addEventListener('change', () => applyVehicleChoice(true));
-        const other = el('div', { class: 'followup', id: 'veh-other', hidden: true },
-          el('label', { for: inputId, text: 'Type the registration' }),
-          textInputFor(Object.assign({}, q, { upper: true }), inputId, errId));
+
+        const addPanel = el('div', { class: 'followup', id: 'veh-add', hidden: true },
+          el('p', { class: 'hint', text: 'Add your van here. It’s saved on this phone, so it will be in the list next time.' }),
+          el('div', { class: 'field' },
+            el('label', { for: 'add-reg', text: 'Registration' }),
+            el('input', { id: 'add-reg', type: 'text', maxlength: 10, autocomplete: 'off', autocapitalize: 'characters', spellcheck: 'false' })),
+          el('div', { class: 'field' },
+            el('label', { for: 'add-make', text: 'Make/type' }),
+            el('input', { id: 'add-make', type: 'text', maxlength: 60, autocomplete: 'off', autocapitalize: 'words' })),
+          el('fieldset', { class: 'field' }, el('legend', { text: 'Fuel type' }), fuelChoices('add-fuel')),
+          el('p', { class: 'err', id: 'err-veh-add' }),
+          el('div', { class: 'stack' },
+            el('button', { type: 'button', class: 'btn btn-primary', id: 'addVehBtn', text: 'Add this vehicle', onclick: onAddVehicle }),
+            el('button', { type: 'button', class: 'btn btn-secondary', text: 'Cancel', onclick: () => { byId('in-vehicle-choice').value = ''; applyVehicleChoice(true); } })));
+
         box.append(el('div', { class: 'field', id: 'q-' + q.id },
           el('label', { for: 'in-vehicle-choice', text: q.text }),
-          select, other,
+          select,
+          el('p', { class: 'err', id: errId }),
+          addPanel,
+          el('button', { type: 'button', class: 'btn btn-quiet', id: 'removeVehBtn', hidden: true, text: 'Remove this van from this phone', onclick: onRemoveVehicle })));
+        populateVehicleSelect('');
+        return;
+      }
+
+      // Filled in from the chosen vehicle; the operative can't edit it here.
+      if (q.type === 'fromVehicle') {
+        box.append(el('div', { class: 'field', id: 'q-' + q.id },
+          el('label', { for: inputId, text: q.text }),
+          el('input', { id: inputId, type: 'text', readonly: true, tabindex: '-1', placeholder: 'Filled in when you choose your van', 'aria-describedby': errId }),
           el('p', { class: 'err', id: errId })));
         return;
       }
 
-      const fieldQ = q.type === 'vehicle' ? Object.assign({}, q, { type: 'text', upper: true }) : q;
       box.append(el('div', { class: 'field', id: 'q-' + q.id },
         el('label', { for: inputId, text: q.text }),
-        textInputFor(fieldQ, inputId, errId),
-        q.id === 'make-type' && VEHICLES.length ? el('p', { class: 'hint', id: 'make-hint', text: 'Filled in from the van you choose.' }) : null,
+        textInputFor(q, inputId, errId),
         el('p', { class: 'err', id: errId })));
     });
   }
 
-  // Keeps the registration and make/type in step with the drop-down.
-  // userChange = true when the operative picked a van (not when restoring).
+  // Copies the chosen vehicle into the answers, shows or hides the add panel,
+  // and applies N/A to items that don't apply to that fuel type.
+  // userChange = true when the operative changed it (not when restoring).
   function applyVehicleChoice(userChange) {
     const select = byId('in-vehicle-choice');
     if (!select) return;
     const choice = select.value;
-    const other = choice === OTHER;
-    const v = VEHICLES.find((x) => x.reg === choice);
-    const regInput = byId('in-vehicle-reg');
-    const makeInput = byId('in-make-type');
-    const makeHint = byId('make-hint');
+    const adding = choice === ADD;
+    const v = adding ? null : findVehicle(choice);
 
-    byId('veh-other').hidden = !other;
-    state.answers['vehicle-choice'] = choice;
+    byId('veh-add').hidden = !adding;
+    byId('removeVehBtn').hidden = !(v && v.local);
 
-    if (v) {
-      state.answers['vehicle-reg'] = v.reg;
-      regInput.value = '';
-      if (makeInput) {
-        makeInput.value = v.make || '';
-        makeInput.readOnly = !!v.make;
-        state.answers['make-type'] = v.make || state.answers['make-type'] || '';
-        if (!v.make) makeInput.value = state.answers['make-type'];
-      }
-      if (makeHint) makeHint.hidden = !v.make;
-    } else {
-      if (userChange) {
-        state.answers['vehicle-reg'] = '';
-        if (makeInput && makeInput.readOnly) { makeInput.value = ''; state.answers['make-type'] = ''; }
-      }
-      if (makeInput) makeInput.readOnly = false;
-      if (makeHint) makeHint.hidden = true;
-      if (other && userChange) regInput.focus();
-    }
+    state.answers['vehicle-choice'] = v ? v.reg : '';
+    state.answers['vehicle-reg'] = v ? v.reg : '';
+    state.answers['vehicle-added'] = !!(v && v.local);
+    HEADER_FIELDS.forEach((q) => {
+      if (q.type !== 'fromVehicle') return;
+      const val = v ? (v[q.from] || '') : '';
+      state.answers[q.id] = val;
+      byId('in-' + q.id).value = val;
+    });
+
+    applyNotApplicable();
+    if (adding && userChange) byId('add-reg').focus();
     if (userChange) {
       clearError('vehicle-reg');
-      if (v && v.make) clearError('make-type');
       updateProgress();
       scheduleSave();
     }
+  }
+
+  function onAddVehicle() {
+    const reg = normReg(byId('add-reg').value);
+    const make = byId('add-make').value.trim();
+    const fuelInput = document.querySelector('input[name="add-fuel"]:checked');
+    const fuel = fuelInput ? fuelInput.value : '';
+    const err = byId('err-veh-add');
+
+    let msg = '';
+    if (!reg) msg = 'Enter the registration.';
+    else if (!/^[A-Z0-9 ]{2,10}$/.test(reg)) msg = 'Use letters and numbers only for the registration, for example AB12 CDE.';
+    else if (!make) msg = 'Enter the make and type, for example Ford Transit.';
+    else if (!fuel) msg = 'Choose the fuel type.';
+    if (msg) { err.textContent = msg; return; }
+    err.textContent = '';
+
+    const existing = findVehicle(reg);
+    if (existing) {
+      populateVehicleSelect(existing.reg);
+      toast('That van is already in the list, so it’s been chosen for you.', 'info');
+    } else {
+      myVehicles.push({ reg, make, fuel });
+      const saved = saveMyVehicles();
+      populateVehicleSelect(reg);
+      toast(saved ? 'Van added. It’s saved on this phone for next time.' : 'Van added for this check. This phone couldn’t save it for next time.', 'info');
+    }
+    byId('add-reg').value = '';
+    byId('add-make').value = '';
+    document.querySelectorAll('input[name="add-fuel"]').forEach((r) => { r.checked = false; });
+    applyVehicleChoice(true);
+  }
+
+  function onRemoveVehicle() {
+    const reg = byId('in-vehicle-choice').value;
+    if (!window.confirm(`Remove ${reg} from the list on this phone?`)) return;
+    myVehicles = myVehicles.filter((v) => regKey(v.reg) !== regKey(reg));
+    saveMyVehicles();
+    populateVehicleSelect('');
+    applyVehicleChoice(true);
+  }
+
+  // Items with `naFor: ['Electric']` (etc.) are answered "N/A" automatically
+  // and locked when the chosen vehicle has that fuel type.
+  function applyNotApplicable() {
+    const fuel = state.answers['fuel-type'] || '';
+    QUESTIONS.forEach((q) => {
+      if (!q.naFor) return;
+      const wrap = byId('q-' + q.id);
+      const note = byId('na-' + q.id);
+      const toggle = byId('ct-' + q.id);
+      const box = byId('cb-' + q.id);
+      const radios = wrap.querySelectorAll('input[type="radio"]');
+      const na = !!fuel && [].concat(q.naFor).includes(fuel);
+      if (na) {
+        state.answers[q.id] = 'N/A';
+        state.answers[q.id + '__na'] = fuel;
+        radios.forEach((r) => { r.checked = false; r.disabled = true; });
+        wrap.classList.add('is-na');
+        note.textContent = `Not applicable: ${fuel.toLowerCase()} vehicle`;
+        note.hidden = false;
+        if (toggle) toggle.hidden = true;
+        if (box) box.hidden = true;
+        clearError(q.id);
+      } else {
+        if (state.answers[q.id + '__na']) {
+          delete state.answers[q.id];
+          delete state.answers[q.id + '__na'];
+        }
+        radios.forEach((r) => { r.disabled = false; });
+        wrap.classList.remove('is-na');
+        note.hidden = true;
+        if (toggle && box && box.hidden) toggle.hidden = false;
+      }
+    });
   }
 
   function renderQuestion(q, num) {
@@ -267,6 +400,7 @@
       wrap.append(textInputFor(q, inputId, errId));
     }
     if (q.help) wrap.append(el('p', { class: 'hint', text: q.help }));
+    if (q.naFor) wrap.append(el('p', { class: 'na-note', id: 'na-' + q.id, hidden: true }));
     wrap.append(el('p', { class: 'err', id: errId }));
 
     if (q.comments) {
@@ -354,7 +488,7 @@
   function progressItems() {
     const items = [];
     const d = detailValues();
-    HEADER_FIELDS.forEach((q) => { if (q.required) items.push(!isBlank(state.answers[q.id])); });
+    HEADER_FIELDS.forEach((q) => { if (q.required && q.type !== 'fromVehicle') items.push(!isBlank(state.answers[q.id])); });
     items.push(!!d.name, !!d.date);
     QUESTIONS.forEach((q) => { if (q.required) items.push(!isBlank(state.answers[q.id])); });
     if (CFG.minPhotos > 0) items.push(state.photos.filter((p) => !p.broken).length >= CFG.minPhotos);
@@ -425,8 +559,12 @@
 
   function validateQuestion(q, problems) {
     const v = state.answers[q.id];
-    if (q.type === 'vehicle' && isBlank(v) && VEHICLES.length) {
-      problems.push([q.id, state.answers['vehicle-choice'] === OTHER ? 'Type the registration.' : 'Choose your van from the list.']);
+    if (q.type === 'fromVehicle') return; // covered by the vehicle choice
+    if (q.type === 'vehicle' && isBlank(v)) {
+      const adding = byId('in-vehicle-choice') && byId('in-vehicle-choice').value === ADD;
+      problems.push([q.id, adding
+        ? 'Finish adding your van and tap “Add this vehicle”, or choose one from the list.'
+        : 'Choose your van from the list, or add it if it isn’t there.']);
       return;
     }
     if (isBlank(v)) {
@@ -813,7 +951,7 @@
     });
     y += panelH + 3;
     font(8, 'normal', C.muted);
-    textAt(pdfSafe(`Submitted ${submitted.toLocaleDateString('en-GB')} at ${pad(submitted.getHours())}:${pad(submitted.getMinutes())} from the van check page. ${state.photos.length} photo${state.photos.length === 1 ? '' : 's'} attached.`), M, y, 8);
+    textAt(pdfSafe(`Submitted ${submitted.toLocaleDateString('en-GB')} at ${pad(submitted.getHours())}:${pad(submitted.getMinutes())} from the van check page. ${state.photos.length} photo${state.photos.length === 1 ? '' : 's'} attached.${state.answers['vehicle-added'] ? ' Vehicle added by the driver (not on the company list).' : ''}`), M, y, 8);
     y += 7;
 
     // ---- Needs attention summary
@@ -893,7 +1031,8 @@
           const ans = formatAnswer(q) || 'Not answered';
           const itemLines = split(`${num}. ${q.text}`, colItem - 2 * PADX, 9.5, 'normal');
           const resLines = split(ans, colRes - 2 * PADX, 9.5, 'bold');
-          const com = state.answers[q.id + '__comments'];
+          const naFuel = state.answers[q.id + '__na'];
+          const com = naFuel ? `Not applicable: ${naFuel.toLowerCase()} vehicle` : state.answers[q.id + '__comments'];
           const comLines = isBlank(com) ? [] : split(com.trim(), colCom - 2 * PADX, 9, 'normal');
           const h = Math.max(itemLines.length * lh(9.5), resLines.length * lh(9.5), comLines.length * lh(9), lh(9.5)) + 2 * PADY;
 
@@ -911,7 +1050,7 @@
           doc.line(M + colItem + colRes, y, M + colItem + colRes, y + h);
 
           font(9.5, 'normal'); textAt(itemLines, M + PADX, y + PADY, 9.5);
-          font(9.5, 'bold', flaggedRow ? C.fail : isBlank(state.answers[q.id]) ? C.muted : C.ink);
+          font(9.5, 'bold', flaggedRow ? C.fail : (isBlank(state.answers[q.id]) || state.answers[q.id + '__na']) ? C.muted : C.ink);
           textAt(resLines, M + colItem + PADX, y + PADY, 9.5);
           if (comLines.length) { font(9, 'normal'); textAt(comLines, M + colItem + colRes + PADX, y + PADY, 9); }
           y += h;
